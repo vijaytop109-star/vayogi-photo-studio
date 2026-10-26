@@ -1,0 +1,742 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#0f0d0b">
+<title>VAYOGI Photo Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;700&family=Inter+Tight:wght@400;500;600&display=swap">
+<style>
+/* Layout: full-screen viewfinder, pose card top-right, status + controls stacked at the bottom */
+:root{
+  --ink:#0f0d0b; --panel:rgba(20,17,14,.82); --line:rgba(255,236,210,.14);
+  --text:#f6efe6; --muted:#b9ad9e; --amber:#ffb547; --ok:#4fd18b; --bad:#ff6b5b; --warn:#ffcf5a;
+  --display:"Sora",system-ui,sans-serif; --body:"Inter Tight",system-ui,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--ink);color:var(--text);font-family:var(--body);overflow:hidden;-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
+button{font:inherit;color:inherit;border:0;cursor:pointer}
+button:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+#app{position:fixed;inset:0}
+#video,#overlay{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+.mirror{transform:scaleX(-1)}
+#ring{position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 0 9vmin #fff,inset 0 0 6vmin 12vmin rgba(255,255,255,.9)}
+#flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .35s}
+#flash.on{opacity:1;transition:none}
+
+#top{position:absolute;left:0;right:0;top:0;padding:calc(env(safe-area-inset-top,0px) + 10px) max(14px,env(safe-area-inset-right,0px)) 10px max(14px,env(safe-area-inset-left,0px));
+  display:flex;align-items:center;gap:10px;background:linear-gradient(rgba(15,13,11,.85),transparent)}
+#counter{font-family:var(--display);font-weight:700;font-size:15px;letter-spacing:.02em;font-variant-numeric:tabular-nums}
+#counter small{color:var(--muted);font-weight:500}
+#setname{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.spacer{flex:1}
+.iconbtn{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 12px;font-size:13px;font-weight:600}
+.iconbtn.on{background:var(--amber);color:#1b1206;border-color:transparent}
+
+#card{position:absolute;right:max(12px,env(safe-area-inset-right,0px));top:calc(env(safe-area-inset-top,0px) + 58px);width:150px;background:var(--panel);
+  border:1px solid var(--line);border-radius:16px;padding:10px;backdrop-filter:blur(8px)}
+#card .lbl{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--amber);font-weight:600}
+#poseCanvas{display:block;width:130px;height:150px;margin:6px 0}
+#poseName{font-family:var(--display);font-size:13px;font-weight:700;line-height:1.25}
+#poseHint{font-size:11.5px;color:var(--muted);line-height:1.35;margin-top:4px}
+
+#count{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--display);font-size:34vmin;font-weight:700;color:#fff;text-shadow:0 4px 30px rgba(0,0,0,.6);pointer-events:none}
+
+#bottom{position:absolute;left:0;right:0;bottom:0;padding:24px max(14px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 14px) max(14px,env(safe-area-inset-left,0px));
+  background:linear-gradient(transparent,rgba(15,13,11,.92) 30%);display:flex;flex-direction:column;gap:10px}
+#msg{font-family:var(--display);font-size:17px;font-weight:600;line-height:1.3;text-wrap:balance;min-height:2.6em}
+#chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-size:11.5px;font-weight:600;padding:5px 9px;border-radius:999px;background:rgba(255,255,255,.08);color:var(--muted);display:flex;align-items:center;gap:6px}
+.chip::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.chip.ok{color:var(--ok)} .chip.bad{color:var(--bad)} .chip.warn{color:var(--warn)}
+#heard{font-size:11.5px;color:var(--muted);min-height:1.2em}
+#controls{display:grid;grid-template-columns:1fr 1.6fr 1fr;gap:10px}
+.ctl{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:13px 6px;font-weight:600;font-size:14px}
+#shootBtn{background:var(--amber);color:#1b1206;border:0;font-family:var(--display);font-size:17px;font-weight:700}
+
+.sheet{position:absolute;inset:0;background:var(--ink);z-index:5;overflow:auto;
+  padding:calc(env(safe-area-inset-top,0px) + 22px) max(18px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 22px) max(18px,env(safe-area-inset-left,0px))}
+.sheet .inner{max-width:520px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+h1{font-family:var(--display);font-size:28px;margin:0;line-height:1.1;letter-spacing:-.01em}
+h1 span{color:var(--amber)}
+h2{font-family:var(--display);font-size:16px;margin:4px 0 0}
+p{margin:0;color:var(--muted);line-height:1.5;font-size:14px}
+.group{display:flex;flex-direction:column;gap:8px}
+.group .t{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:600}
+.opt{display:flex;gap:12px;align-items:flex-start;padding:13px 14px;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.03);cursor:pointer}
+.opt input{accent-color:var(--amber);width:20px;height:20px;margin:1px 0 0;flex:none}
+.opt b{display:block;font-size:15px;font-weight:600}
+.opt small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px;line-height:1.4}
+.big{background:var(--amber);color:#1b1206;border-radius:16px;padding:16px;font-family:var(--display);font-weight:700;font-size:18px}
+.sec{background:rgba(255,255,255,.07);border:1px solid var(--line);border-radius:14px;padding:13px;font-weight:600}
+.say{display:flex;flex-wrap:wrap;gap:6px}
+.say span{font-size:12.5px;padding:5px 10px;border-radius:8px;background:rgba(255,181,71,.12);color:var(--amber);font-weight:600}
+.note{font-size:12.5px;color:var(--warn);line-height:1.45}
+
+#review{position:absolute;inset:0;background:rgba(15,13,11,.94);display:flex;flex-direction:column;gap:14px;align-items:center;justify-content:center;
+  padding:calc(env(safe-area-inset-top,0px) + 16px) max(16px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 16px) max(16px,env(safe-area-inset-left,0px))}
+#reviewImg{max-width:100%;max-height:68vh;border-radius:14px;border:1px solid var(--line)}
+#review .row{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%;max-width:420px}
+
+#breakCard{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(88vw,420px);background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:22px;display:flex;flex-direction:column;gap:12px;text-align:center}
+#gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:6px}
+#gallery img{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+@media (prefers-reduced-motion:reduce){#flash{transition:none}}
+</style>
+</head>
+<body>
+<div id="app">
+  <video id="video" playsinline muted autoplay></video>
+  <canvas id="overlay"></canvas>
+  <div id="ring" hidden></div>
+  <div id="flash"></div>
+
+  <header id="top">
+    <div>
+      <div id="counter">Pose 1 <small>/ 24</small></div>
+      <div id="setname">Face set</div>
+    </div>
+    <div class="spacer"></div>
+    <button class="iconbtn" id="micBtn" type="button">Mic</button>
+    <button class="iconbtn" id="lightBtn" type="button">Light</button>
+    <button class="iconbtn" id="menuBtn" type="button">Menu</button>
+  </header>
+
+  <aside id="card">
+    <div class="lbl">Next pose</div>
+    <canvas id="poseCanvas" width="260" height="300"></canvas>
+    <div id="poseName">Front, normal face</div>
+    <div id="poseHint">Look straight at the camera.</div>
+  </aside>
+
+  <div id="count" hidden></div>
+
+  <div id="breakCard" hidden>
+    <h2 id="breakTitle">Change your look</h2>
+    <p id="breakText"></p>
+    <button class="big" id="breakBtn" type="button">Continue (say "Next")</button>
+  </div>
+
+  <section id="bottom">
+    <div id="msg">Starting camera…</div>
+    <div id="chips">
+      <span class="chip" id="c_face">Face</span>
+      <span class="chip" id="c_light">Light</span>
+      <span class="chip" id="c_dist">Distance</span>
+      <span class="chip" id="c_angle">Angle</span>
+      <span class="chip" id="c_expr">Expression</span>
+    </div>
+    <div id="heard"></div>
+    <div id="controls">
+      <button class="ctl" id="backBtn" type="button">Back</button>
+      <button class="ctl" id="shootBtn" type="button">Shoot</button>
+      <button class="ctl" id="nextBtn" type="button">Skip</button>
+    </div>
+  </section>
+
+  <div id="review" hidden>
+    <img id="reviewImg" alt="Photo just taken">
+    <div class="row">
+      <button class="sec" id="retakeBtn" type="button">Again</button>
+      <button class="big" id="saveBtn" type="button">OK, save</button>
+    </div>
+    <p>Say <b>OK</b> to save and go to the next pose, or <b>Again</b> to retake.</p>
+  </div>
+
+  <!-- Start screen -->
+  <div class="sheet" id="start">
+    <div class="inner">
+      <h1>VAYOGI <span>Photo Studio</span></h1>
+      <p>Stand in front of the phone. The app checks your face, light and angle, tells you what to fix by voice, and takes the photo when you say "Shoot".</p>
+
+      <div class="group">
+        <div class="t">Photo set</div>
+        <label class="opt"><input type="radio" name="set" value="lora" checked><span><b>Face set for LoRA</b><small>24 photos: every angle, smile, laugh, close-up and half body. Includes 2 breaks to change shirt.</small></span></label>
+        <label class="opt"><input type="radio" name="set" value="thumb"><span><b>Thumbnail set</b><small>10 photos: shocked, pointing, thinking, thumbs up and more.</small></span></label>
+      </div>
+
+      <div class="group">
+        <div class="t">Camera</div>
+        <label class="opt"><input type="radio" name="cam" value="user" checked><span><b>Front camera</b><small>You can see yourself and the pose card.</small></span></label>
+        <label class="opt"><input type="radio" name="cam" value="environment"><span><b>Back camera</b><small>Better quality. You cannot see the screen, so follow the voice.</small></span></label>
+      </div>
+
+      <div class="group">
+        <div class="t">Options</div>
+        <label class="opt"><input type="checkbox" id="optVoice" checked><span><b>Voice guide (Tamil)</b><small>The app tells you what to correct.</small></span></label>
+        <label class="opt"><input type="checkbox" id="optMic" checked><span><b>Voice commands</b><small>Say Shoot, OK, Again, Next, Back.</small></span></label>
+        <label class="opt"><input type="checkbox" id="optAuto"><span><b>Auto shoot</b><small>Takes the photo by itself when the pose is right.</small></span></label>
+        <label class="opt"><input type="checkbox" id="optBright" checked><span><b>Fix dark photos</b><small>Brightens the photo a little if your face is dark.</small></span></label>
+        <label class="opt"><input type="checkbox" id="optSave" checked><span><b>Save each photo right away</b><small>Every photo goes to the phone's Download folder when you say OK.</small></span></label>
+      </div>
+
+      <div class="group">
+        <div class="t">Words you can say</div>
+        <div class="say"><span>Shoot</span><span>OK</span><span>Again</span><span>Next</span><span>Back</span><span>Pause</span><span>Start</span></div>
+      </div>
+
+      <p>Tip: Put the phone on a stand at eye level, about 1.5 metres away, facing a window.</p>
+      <div class="note" id="startNote" hidden></div>
+      <button class="big" id="startBtn" type="button">Start photo shoot</button>
+    </div>
+  </div>
+
+  <!-- Menu -->
+  <div class="sheet" id="menu" hidden>
+    <div class="inner">
+      <h1>Menu</h1>
+      <div class="note" id="voiceNote" hidden></div>
+      <button class="big" id="resumeBtn" type="button">Back to camera</button>
+      <button class="sec" id="zipBtn" type="button">Download all photos (ZIP)</button>
+      <button class="sec" id="switchCamBtn" type="button">Switch camera</button>
+      <label class="opt"><input type="checkbox" id="mAuto"><span><b>Auto shoot</b></span></label>
+      <label class="opt"><input type="checkbox" id="mVoice"><span><b>Voice guide (Tamil)</b></span></label>
+      <button class="sec" id="restartBtn" type="button">Start over (new set)</button>
+      <h2 id="galTitle">Photos taken: 0</h2>
+      <div id="gallery"></div>
+    </div>
+  </div>
+
+  <!-- Done -->
+  <div class="sheet" id="done" hidden>
+    <div class="inner">
+      <h1>All <span>done</span></h1>
+      <p id="doneText"></p>
+      <button class="big" id="zipBtn2" type="button">Download all photos (ZIP)</button>
+      <button class="sec" id="restartBtn2" type="button">Start a new set</button>
+      <div id="gallery2" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:6px"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script type="module">
+import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+
+/* ---------------- Pose lists ---------------- */
+// dist: close | hs (head & shoulders) | half (half body)
+// yaw: front | l34 | r34 | lside | rside  (l = the person's own left)
+// pitch: level | up | down     roll: straight | tiltL | tiltR
+// expr: neutral | smile | laugh | surprised | any
+const P=(id,name,dist,yaw,pitch,roll,expr,hint,ta)=>({id,name,dist,yaw,pitch,roll,expr,hint,ta});
+const BRK=(title,text,ta)=>({brk:true,title,text,ta});
+const SETS={
+ lora:{name:"Face set (LoRA)",items:[
+  P("front_neutral","Front, normal face","hs","front","level","straight","neutral","Look straight at the camera. No smile.","நேரா camera-வை பாருங்க. சிரிக்காம normal-ஆ இருங்க."),
+  P("front_smile","Front, smile","hs","front","level","straight","smile","Look straight and smile.","நேரா பாருங்க. அழகா ஒரு சிரிப்பு சிரிங்க."),
+  P("l34_neutral","Turn a little to your left","hs","l34","level","straight","neutral","Turn your head a little to your left. Eyes on the camera.","தலையை உங்க இடது பக்கம் கொஞ்சம் திருப்புங்க. கண்ணு camera-வையே பார்க்கட்டும்."),
+  P("r34_neutral","Turn a little to your right","hs","r34","level","straight","neutral","Turn your head a little to your right. Eyes on the camera.","இப்போ தலையை உங்க வலது பக்கம் கொஞ்சம் திருப்புங்க."),
+  P("close_neutral","Close-up, normal face","close","front","level","straight","neutral","Come close to the camera. Face fills the screen.","camera பக்கத்துல வாங்க. முகம் மட்டும் பெருசா தெரியணும். normal-ஆ இருங்க."),
+  P("close_smile","Close-up, smile","close","front","level","straight","smile","Stay close and smile.","அப்படியே பக்கத்துலயே இருந்து சிரிங்க."),
+  P("look_up","Chin up a little","hs","front","up","straight","neutral","Lift your chin a little.","கொஞ்சம் பின்னாடி போயிட்டு, தலையை கொஞ்சம் மேலே தூக்குங்க."),
+  P("look_down","Chin down a little","hs","front","down","straight","neutral","Lower your chin a little, eyes on the camera.","இப்போ கொஞ்சம் கீழே குனிஞ்சு, camera-வை பாருங்க."),
+  BRK("Change your shirt","Put on a different shirt. If you can, stand in a different place too. This makes the LoRA better.","இப்போ வேற shirt போட்டுக்கோங்க. முடிஞ்சா வேற இடத்துல நில்லுங்க. ரெடியானதும் Next சொல்லுங்க."),
+  P("l34_smile","Left turn, smile","hs","l34","level","straight","smile","Turn a little to your left and smile.","உங்க இடது பக்கம் கொஞ்சம் திருப்பி, சிரிங்க."),
+  P("r34_smile","Right turn, smile","hs","r34","level","straight","smile","Turn a little to your right and smile.","உங்க வலது பக்கம் கொஞ்சம் திருப்பி, சிரிங்க."),
+  P("lside","Side face, left","hs","lside","level","straight","neutral","Turn fully to your left. Side face.","உங்க இடது பக்கம் முழுசா திருப்புங்க. பக்கவாட்டு முகம் தெரியணும்."),
+  P("rside","Side face, right","hs","rside","level","straight","neutral","Turn fully to your right. Side face.","இப்போ உங்க வலது பக்கம் முழுசா திருப்புங்க."),
+  P("tilt_left","Head tilt left, smile","hs","front","level","tiltL","smile","Tilt your head toward your left shoulder and smile.","தலையை உங்க இடது தோள் பக்கம் கொஞ்சம் சாய்ச்சு, சிரிங்க."),
+  P("tilt_right","Head tilt right, smile","hs","front","level","tiltR","smile","Tilt your head toward your right shoulder and smile.","தலையை உங்க வலது தோள் பக்கம் கொஞ்சம் சாய்ச்சு, சிரிங்க."),
+  P("laugh","Big laugh","hs","front","level","straight","laugh","Laugh with your mouth open.","வாய் விட்டு நல்லா சிரிங்க."),
+  P("surprised","Surprised","hs","front","level","straight","surprised","Open your mouth and raise your eyebrows.","ஆச்சரியமா வாயை திறந்து, புருவத்தை மேலே தூக்குங்க."),
+  BRK("Change again","Put on another shirt or add something new, like a watch or a towel on the shoulder.","இன்னொரு தடவை shirt மாத்திக்கோங்க. ரெடியானதும் Next சொல்லுங்க."),
+  P("half_neutral","Half body, normal face","half","front","level","straight","neutral","Step back. Show from head to waist.","கொஞ்சம் பின்னாடி போங்க. தலையில இருந்து இடுப்பு வரைக்கும் தெரியணும்."),
+  P("half_smile","Half body, smile","half","front","level","straight","smile","Stay back and smile.","அப்படியே இருந்து சிரிங்க."),
+  P("half_l34","Half body, left turn","half","l34","level","straight","smile","Turn a little to your left and smile.","உங்க இடது பக்கம் கொஞ்சம் திருப்பி சிரிங்க."),
+  P("half_r34","Half body, right turn","half","r34","level","straight","neutral","Turn a little to your right.","உங்க வலது பக்கம் கொஞ்சம் திருப்புங்க. normal-ஆ இருங்க."),
+  P("close_l34","Close-up, left turn","close","l34","level","straight","neutral","Come close and turn a little to your left.","camera பக்கத்துல வந்து, உங்க இடது பக்கம் கொஞ்சம் திருப்புங்க."),
+  P("close_r34","Close-up, right turn","close","r34","level","straight","smile","Stay close, turn a little to your right and smile.","பக்கத்துலயே இருந்து, வலது பக்கம் திருப்பி சிரிங்க."),
+  P("close_up","Close-up, chin up","close","front","up","straight","neutral","Stay close and lift your chin a little.","பக்கத்துலயே இருந்து, தலையை கொஞ்சம் மேலே தூக்குங்க."),
+  P("final_smile","Front, soft smile","hs","front","level","straight","smile","Last one. A soft, natural smile.","கடைசி photo. இயல்பா ஒரு சின்ன சிரிப்பு."),
+ ]},
+ thumb:{name:"Thumbnail set",items:[
+  P("shocked","Shocked face","close","front","level","straight","surprised","Mouth wide open, eyebrows up.","அதிர்ச்சியா, வாயை பெருசா திறந்து, புருவத்தை தூக்குங்க."),
+  P("big_laugh","Big happy laugh","close","front","level","straight","laugh","Laugh big. Happy face.","சந்தோஷமா வாய் விட்டு சிரிங்க."),
+  P("pointing","Pointing to the side","hs","front","level","any","any","Point to one side with your hand. Mouth a little open.","ஒரு கையால பக்கத்துல ஏதோ காட்டுற மாதிரி point பண்ணுங்க."),
+  P("thinking","Thinking","hs","l34","level","any","neutral","Hand on your chin, look like you are thinking.","கையை தாடையில வச்சு, யோசிக்கிற மாதிரி இருங்க."),
+  P("thumbs_up","Thumbs up","hs","front","level","any","smile","Show a thumbs up and smile.","ஒரு thumbs up காட்டி சிரிங்க."),
+  P("worried","Worried","hs","front","level","any","any","Worried face, eyebrows pulled together.","கவலையா இருக்கிற மாதிரி முகத்தை வைங்க."),
+  P("serious","Serious look","close","front","level","straight","neutral","Serious face, look straight at the camera.","serious-ஆ நேரா camera-வை பாருங்க."),
+  P("excited","Excited","hs","front","level","any","laugh","Excited, both hands up if you like.","ரொம்ப சந்தோஷமா, ரெண்டு கையையும் தூக்கி சிரிங்க."),
+  P("side_smile","Side smile","hs","r34","level","any","smile","Turn a little to your right and smile.","உங்க வலது பக்கம் கொஞ்சம் திருப்பி சிரிங்க."),
+  P("hands_cheeks","Shocked, hands on cheeks","hs","front","level","any","surprised","Both hands on your cheeks, shocked face.","ரெண்டு கையையும் கன்னத்துல வச்சு, ஆச்சரியமா பாருங்க."),
+ ]}
+};
+
+/* ---------------- State ---------------- */
+const $=id=>document.getElementById(id);
+const S={setKey:"lora",idx:0,phase:"idle",facing:"user",voice:true,mic:true,auto:false,bright:true,saveEach:true,ring:false,
+  captures:[],pitchBase:null,pitchEma:null,lastIssueKey:null,issueSince:0,readySince:0,readyAnnounced:false,autoTimer:null,
+  light:{face:128,left:128,right:128,frame:128},lastLightSpeak:0,frameNo:0,expo:null,lastExpo:0,pending:null};
+let landmarker=null,stream=null,track=null,audioCtx=null,taVoice=null;
+const video=$("video"),overlay=$("overlay"),octx=overlay.getContext("2d");
+const sample=document.createElement("canvas"),sctx=sample.getContext("2d",{willReadFrequently:true});
+
+const items=()=>SETS[S.setKey].items;
+const cur=()=>items()[S.idx];
+const poseCount=()=>items().filter(i=>!i.brk).length;
+const poseNumber=()=>items().slice(0,S.idx+1).filter(i=>!i.brk).length;
+
+/* ---------------- Voice out (Tamil) ---------------- */
+let speaking=false,lastSpeakEnd=0,keyTimes={};
+function pickVoice(){
+  const vs=speechSynthesis.getVoices();
+  taVoice=vs.find(v=>/^ta/i.test(v.lang))||null;
+  const n=$("voiceNote"),sn=$("startNote");
+  if(vs.length&&!taVoice){
+    const t="Tamil voice is not installed on this phone. Open phone Settings → General management → Text-to-speech output → Google → Install voice data → Tamil. Until then the voice may sound wrong.";
+    n.textContent=t;n.hidden=false;sn.textContent=t;sn.hidden=false;
+  }
+}
+speechSynthesis.onvoiceschanged=pickVoice;pickVoice();
+function speak(text,key,force=false){
+  if(!S.voice)return;
+  const now=performance.now();
+  if(!force){
+    if(speaking)return;
+    if(now-lastSpeakEnd<1800)return;
+    if(key&&keyTimes[key]&&now-keyTimes[key]<7000)return;
+  }
+  if(key)keyTimes[key]=now;
+  speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(text);
+  u.lang="ta-IN";if(taVoice)u.voice=taVoice;u.rate=1;
+  speaking=true;recPause();
+  let finished=false;
+  const end=()=>{if(finished)return;finished=true;speaking=false;lastSpeakEnd=performance.now();recResume();};
+  u.onend=end;u.onerror=end;
+  setTimeout(end,1800+text.length*95); // some phones never fire onend
+  speechSynthesis.speak(u);
+}
+
+/* ---------------- Voice in (commands) ---------------- */
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+let rec=null,recWanted=false,lastCmd=0;
+const CMDS=[
+  ["shoot",/\b(shoot|shoots|shot|click|capture|take|photo|cheese|edu)\b/],
+  ["ok",/\b(ok|okay|save|yes|done|sari|correct|super|fine)\b/],
+  ["next",/\b(next|skip|adutha|aduthu|aduthathu)\b/],
+  ["again",/\b(again|retake|repeat|redo|once more|innoru)\b/],
+  ["back",/\b(back|previous|before)\b/],
+  ["pause",/\b(pause|stop|wait)\b/],
+  ["start",/\b(start|resume|continue)\b/],
+];
+function setupRec(){
+  if(!SR){$("heard").textContent="Voice commands need Google Chrome.";S.mic=false;return;}
+  rec=new SR();rec.lang="en-IN";rec.continuous=true;rec.interimResults=true;rec.maxAlternatives=3;
+  rec.onresult=e=>{
+    const r=e.results[e.results.length-1];
+    let txt="";for(let i=0;i<r.length;i++)txt+=" "+r[i].transcript.toLowerCase();
+    $("heard").textContent="Heard: "+r[0].transcript.trim();
+    const now=performance.now();if(now-lastCmd<1400)return;
+    for(const [c,re] of CMDS){if(re.test(txt)){lastCmd=now;command(c);break;}}
+  };
+  rec.onend=()=>{if(recWanted&&S.mic&&!speaking)setTimeout(recStart,250);};
+  rec.onerror=e=>{if(e.error==="not-allowed"||e.error==="service-not-allowed"){S.mic=false;recWanted=false;updateMicBtn();$("heard").textContent="Microphone is blocked. Allow it in Chrome to use voice commands.";}};
+}
+function recStart(){if(!rec||!S.mic||speaking)return;try{rec.start();}catch(_){}}
+function recPause(){recWanted=false;if(rec)try{rec.abort();}catch(_){}}
+function recResume(){if(S.mic&&rec){recWanted=true;recStart();}}
+function updateMicBtn(){$("micBtn").classList.toggle("on",S.mic);$("micBtn").textContent=S.mic?"Mic on":"Mic off";}
+
+function command(c){
+  const ph=S.phase;
+  if(ph==="guide"){
+    if(c==="shoot")startCountdown();
+    else if(c==="next"){speak("இந்த pose-ஐ skip பண்றேன்.","skip",true);goTo(S.idx+1);}
+    else if(c==="back")goTo(Math.max(0,S.idx-1));
+    else if(c==="pause")pause();
+  }else if(ph==="review"){
+    if(c==="ok"||c==="next"||c==="shoot")savePhoto();
+    else if(c==="again"||c==="back")retake();
+  }else if(ph==="break"){
+    if(c==="ok"||c==="next"||c==="start"||c==="shoot")goTo(S.idx+1);
+    else if(c==="back")goTo(Math.max(0,S.idx-1));
+  }else if(ph==="paused"){
+    if(c==="start"||c==="ok"||c==="next")resume();
+  }
+}
+
+/* ---------------- Sounds ---------------- */
+function beep(freq=880,dur=.12,vol=.25){
+  if(!audioCtx)return;const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+  o.frequency.value=freq;g.gain.value=vol;o.connect(g);g.connect(audioCtx.destination);
+  g.gain.exponentialRampToValueAtTime(.0001,audioCtx.currentTime+dur);o.start();o.stop(audioCtx.currentTime+dur);
+}
+function shutterSound(){beep(1600,.05,.35);setTimeout(()=>beep(900,.08,.25),60);}
+
+/* ---------------- Camera ---------------- */
+async function startCamera(){
+  if(stream)stream.getTracks().forEach(t=>t.stop());
+  stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:S.facing,width:{ideal:1920},height:{ideal:1440}}});
+  video.srcObject=stream;await video.play();
+  track=stream.getVideoTracks()[0];
+  const mirror=S.facing==="user";
+  video.classList.toggle("mirror",mirror);overlay.classList.toggle("mirror",mirror);
+  S.expo=null;
+  try{const caps=track.getCapabilities?track.getCapabilities():{};if(caps.exposureCompensation){S.expo={...caps.exposureCompensation,val:track.getSettings().exposureCompensation||0};}}catch(_){}
+}
+async function loadModel(){
+  const fs=await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+  const opts=(delegate)=>({baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",delegate},
+    runningMode:"VIDEO",numFaces:1,outputFaceBlendshapes:true});
+  try{landmarker=await FaceLandmarker.createFromOptions(fs,opts("GPU"));}
+  catch(_){landmarker=await FaceLandmarker.createFromOptions(fs,opts("CPU"));}
+}
+
+/* ---------------- Analysis ---------------- */
+const YAW={front:[-.07,.07],l34:[.13,.3],r34:[-.3,-.13],lside:[.27,1],rside:[-1,-.27]};
+const DIST={close:[.40,1],hs:[.24,.40],half:[.12,.24]};
+const CY={close:[.28,.64],hs:[.24,.56],half:[.14,.46]};
+const issue=(key,en,ta)=>({key,en,ta});
+
+function measureLight(lm){
+  const vw=video.videoWidth,vh=video.videoHeight;if(!vw)return;
+  const w=120,h=Math.round(120*vh/vw);sample.width=w;sample.height=h;
+  sctx.drawImage(video,0,0,w,h);
+  const d=sctx.getImageData(0,0,w,h).data;
+  let x0=1,x1=0,y0=1,y1=0;for(const p of lm){x0=Math.min(x0,p.x);x1=Math.max(x1,p.x);y0=Math.min(y0,p.y);y1=Math.max(y1,p.y);}
+  const bx0=Math.max(0,Math.floor(x0*w)),bx1=Math.min(w-1,Math.ceil(x1*w)),by0=Math.max(0,Math.floor(y0*h)),by1=Math.min(h-1,Math.ceil(y1*h));
+  const mid=(bx0+bx1)/2;let sf=0,nf=0,sl=0,nl=0,sr=0,nr=0,st=0;
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const i=(y*w+x)*4,L=.299*d[i]+.587*d[i+1]+.114*d[i+2];st+=L;
+    if(x>=bx0&&x<=bx1&&y>=by0&&y<=by1){sf+=L;nf++;if(x<mid){sl+=L;nl++;}else{sr+=L;nr++;}}
+  }
+  S.light={face:nf?sf/nf:128,left:nl?sl/nl:128,right:nr?sr/nr:128,frame:st/(w*h)};
+}
+
+function analyze(lm,bs,pose){
+  const vw=video.videoWidth,vh=video.videoHeight;
+  const g=k=>lm[k];
+  const nose=g(1),rC=g(234),lC=g(454),fore=g(10),chin=g(152),eR=g(33),eL=g(263);
+  const fwid=lC.x-rC.x;const yaw=fwid>0.01?(nose.x-(rC.x+lC.x)/2)/fwid:0;
+  const roll=Math.atan2((eL.y-eR.y)*vh,(eL.x-eR.x)*vw)*180/Math.PI;
+  const pitch=Math.atan2(fore.z-chin.z,(chin.y-fore.y)*vh/vw)*180/Math.PI;
+  S.pitchEma=S.pitchEma==null?pitch:S.pitchEma*.9+pitch*.1;
+  let x0=1,x1=0;for(const p of lm){x0=Math.min(x0,p.x);x1=Math.max(x1,p.x);}
+  const cx=(x0+x1)/2,cy=(fore.y+chin.y)/2,size=chin.y-fore.y;
+  const B={};(bs||[]).forEach(c=>B[c.categoryName]=c.score);
+  const smile=((B.mouthSmileLeft||0)+(B.mouthSmileRight||0))/2,jaw=B.jawOpen||0,blink=((B.eyeBlinkLeft||0)+(B.eyeBlinkRight||0))/2;
+
+  const out={chips:{face:"ok",light:"ok",dist:"ok",angle:"ok",expr:"ok"},issues:[],light:null};
+  // light (advice only, never blocks the photo)
+  const L=S.light;
+  if(L.face<80){out.chips.light="bad";out.light=issue("dark","Too dark. Face a window or switch on a light.","முகத்துல வெளிச்சம் கம்மியா இருக்கு. ஜன்னல் பக்கம் திரும்புங்க, இல்லன்னா light-ஐ ON பண்ணுங்க. நானும் கொஞ்சம் brightness கூட்டுறேன்.");}
+  else if(L.face>215){out.chips.light="bad";out.light=issue("bright","Too bright on your face. Move away from direct sun.","முகத்துல வெளிச்சம் ரொம்ப அதிகமா இருக்கு. நேரடி வெயில்ல இருந்து கொஞ்சம் தள்ளி நில்லுங்க.");}
+  else if(L.frame-L.face>55&&L.frame>140){out.chips.light="warn";out.light=issue("backlit","Light is behind you. Turn so the light is in front of you.","உங்க பின்னாடி வெளிச்சம் அதிகமா இருக்கு. light உங்க முகத்துக்கு நேரா வர்ற மாதிரி திரும்பி நில்லுங்க.");}
+  else if(pose.yaw==="front"&&Math.abs(L.left-L.right)/Math.max(L.left,L.right)>.35){
+    out.chips.light="warn";
+    const darkSide=L.left<L.right?"வலது":"இடது"; // image-left = person's right
+    out.light=issue("uneven","One side of your face is dark. Face the light directly.",`உங்க முகத்தோட ${darkSide} பக்கம் இருட்டா இருக்கு. light-க்கு நேரா திரும்பி நில்லுங்க.`);
+  }else if(L.face<100)out.chips.light="warn";
+
+  // distance
+  const [dlo,dhi]=DIST[pose.dist];
+  if(size<dlo){out.chips.dist="bad";out.issues.push(issue("closer","Come closer to the camera.","camera பக்கத்துல கொஞ்சம் வாங்க."));}
+  else if(size>dhi){out.chips.dist="bad";out.issues.push(issue("farther","Step back a little.","கொஞ்சம் பின்னாடி போங்க."));}
+  // centre (raw image: small x = person's right side)
+  if(cx<.3){out.chips.dist="bad";out.issues.push(issue("moveL","Move a little to your left.","கொஞ்சம் உங்க இடது பக்கம் நகருங்க."));}
+  else if(cx>.7){out.chips.dist="bad";out.issues.push(issue("moveR","Move a little to your right.","கொஞ்சம் உங்க வலது பக்கம் நகருங்க."));}
+  const [ylo,yhi]=CY[pose.dist];
+  if(cy<ylo){out.chips.dist="bad";out.issues.push(issue("phoneUp","Raise the phone a little, or lower yourself.","phone-ஐ கொஞ்சம் மேலே வைங்க."));}
+  else if(cy>yhi){out.chips.dist="bad";out.issues.push(issue("phoneDown","Lower the phone a little.","phone-ஐ கொஞ்சம் கீழே இறக்கி வைங்க."));}
+
+  // yaw
+  const [ylo2,yhi2]=YAW[pose.yaw];
+  if(yaw<ylo2||yaw>yhi2){
+    out.chips.angle="bad";
+    const wantLeft=yaw<ylo2; // must turn more toward the person's left
+    let en,ta;
+    if(pose.yaw==="front"){en="Turn your face straight to the camera.";ta="முகத்தை நேரா camera பக்கம் திருப்புங்க.";}
+    else if(wantLeft&&(pose.yaw==="l34"||pose.yaw==="lside")){en="Turn a bit more to your left.";ta="இன்னும் கொஞ்சம் உங்க இடது பக்கம் திருப்புங்க.";}
+    else if(!wantLeft&&(pose.yaw==="r34"||pose.yaw==="rside")){en="Turn a bit more to your right.";ta="இன்னும் கொஞ்சம் உங்க வலது பக்கம் திருப்புங்க.";}
+    else{en="Too much. Turn back a little.";ta="ரொம்ப திருப்பிட்டீங்க. கொஞ்சம் கம்மியா திருப்புங்க.";}
+    out.issues.push(issue("yaw_"+(wantLeft?"L":"R"),en,ta));
+  }
+  // pitch
+  const base=S.pitchBase!=null?S.pitchBase:S.pitchEma;
+  const dp=pitch-base;
+  if(pose.pitch==="up"&&dp<9){out.chips.angle="bad";out.issues.push(issue("chinUp","Lift your chin a little more.","தலையை இன்னும் கொஞ்சம் மேலே தூக்குங்க."));}
+  else if(pose.pitch==="down"&&dp>-9){out.chips.angle="bad";out.issues.push(issue("chinDown","Lower your chin a little more.","இன்னும் கொஞ்சம் கீழே குனியுங்க. கண்ணு camera-வை பார்க்கட்டும்."));}
+  else if(pose.pitch==="level"&&S.pitchBase!=null&&Math.abs(dp)>18){out.chips.angle="bad";out.issues.push(issue("chinLevel","Keep your head level.","தலையை நேரா வைங்க. ரொம்ப மேலயோ கீழயோ பார்க்காதீங்க."));}
+  // roll (positive = tilted toward the person's left)
+  if(pose.roll==="straight"&&Math.abs(roll)>10){out.chips.angle="bad";out.issues.push(issue("rollStraight","Keep your head straight, not tilted.","தலையை சாய்க்காம நேரா வைங்க."));}
+  else if(pose.roll==="tiltL"&&roll<9){out.chips.angle="bad";out.issues.push(issue("tiltL","Tilt your head toward your left shoulder.","தலையை உங்க இடது தோள் பக்கம் இன்னும் கொஞ்சம் சாய்ங்க."));}
+  else if(pose.roll==="tiltR"&&roll>-9){out.chips.angle="bad";out.issues.push(issue("tiltR","Tilt your head toward your right shoulder.","தலையை உங்க வலது தோள் பக்கம் இன்னும் கொஞ்சம் சாய்ங்க."));}
+
+  // expression
+  const e=pose.expr;
+  if(e==="neutral"&&(smile>.38||jaw>.22)){out.chips.expr="bad";out.issues.push(issue("neutral","Relax your face. No smile.","சிரிக்காம, வாயை மூடி normal-ஆ இருங்க."));}
+  else if(e==="smile"&&smile<.42){out.chips.expr="bad";out.issues.push(issue("smile","Smile a little more.","இன்னும் கொஞ்சம் சிரிங்க."));}
+  else if(e==="laugh"&&(smile<.42||jaw<.22)){out.chips.expr="bad";out.issues.push(issue("laugh","Laugh with your mouth open.","வாயை திறந்து நல்லா சிரிங்க."));}
+  else if(e==="surprised"&&(jaw<.28||smile>.4)){out.chips.expr="bad";out.issues.push(issue("surprised","Open your mouth wide, eyebrows up.","வாயை இன்னும் திறந்து, புருவத்தை தூக்குங்க."));}
+  if(blink>(e==="laugh"?.75:.55)){out.chips.expr="bad";out.issues.push(issue("eyes","Open your eyes.","கண்ணை நல்லா திறங்க."));}
+
+  // learn the "straight head" pitch while doing level, front poses
+  if(pose.pitch==="level"&&pose.yaw==="front"&&out.chips.angle==="ok"){S.pitchBase=S.pitchBase==null?pitch:S.pitchBase*.95+pitch*.05;}
+  out.box={x0,x1,y0:fore.y,y1:chin.y};
+  return out;
+}
+
+/* ---------------- Auto exposure ---------------- */
+async function autoExposure(){
+  if(!S.expo||!track)return;const now=performance.now();if(now-S.lastExpo<1200)return;
+  const f=S.light.face;let v=S.expo.val;const st=S.expo.step||.33;
+  if(f<95&&v<S.expo.max)v=Math.min(S.expo.max,v+st);
+  else if(f>200&&v>S.expo.min)v=Math.max(S.expo.min,v-st);
+  else return;
+  S.lastExpo=now;
+  try{await track.applyConstraints({advanced:[{exposureCompensation:v}]});S.expo.val=v;}catch(_){S.expo=null;}
+}
+
+/* ---------------- Main loop ---------------- */
+let lastVideoTime=-1;
+function loop(){
+  requestAnimationFrame(loop);
+  if(!landmarker||video.readyState<2)return;
+  if(video.currentTime===lastVideoTime)return;lastVideoTime=video.currentTime;
+  S.frameNo++;
+  const res=landmarker.detectForVideo(video,performance.now());
+  const lm=res.faceLandmarks&&res.faceLandmarks[0];
+  drawOverlay(lm,null);
+  if(S.phase!=="guide")return;
+  const pose=cur();if(!pose||pose.brk)return;
+  const now=performance.now();
+  if(!lm){
+    setChips({face:"bad",light:"",dist:"",angle:"",expr:""});
+    showMsg("Stand in front of the camera.");
+    trackIssue(issue("noface","Stand in front of the camera.","உங்க முகம் தெரியல. camera முன்னாடி வந்து நில்லுங்க."),now);
+    resetReady();return;
+  }
+  if(S.frameNo%5===0)measureLight(lm);
+  const a=analyze(lm,res.faceBlendshapes&&res.faceBlendshapes[0]&&res.faceBlendshapes[0].categories,pose);
+  setChips(a.chips);
+  drawOverlay(lm,a.issues.length===0);
+  if(a.chips.light!=="ok")autoExposure();
+  // light advice: once per pose, then every 25 s
+  if(a.light&&now-S.lastLightSpeak>25000&&now-S.poseStart>2500&&!speaking){S.lastLightSpeak=now;speak(a.light.ta,"light_"+a.light.key);}
+  if(a.issues.length){
+    const top=a.issues[0];showMsg(top.en);trackIssue(top,now);resetReady();
+  }else{
+    S.lastIssueKey=null;
+    if(!S.readySince)S.readySince=now;
+    showMsg(S.auto?"Perfect. Hold still…":"Perfect. Say \"Shoot\".");
+    if(now-S.readySince>600&&!S.readyAnnounced){
+      S.readyAnnounced=true;
+      if(S.auto){speak("சூப்பர்! அப்படியே இருங்க.","ready",true);clearTimeout(S.autoTimer);S.autoTimer=setTimeout(()=>{if(S.phase==="guide"&&S.readySince)startCountdown();},1400);}
+      else speak("சூப்பர்! அப்படியே இருங்க. Shoot சொல்லுங்க.","ready");
+    }
+  }
+}
+function resetReady(){S.readySince=0;if(S.readyAnnounced){S.readyAnnounced=false;clearTimeout(S.autoTimer);}}
+function trackIssue(is,now){
+  if(S.lastIssueKey!==is.key){S.lastIssueKey=is.key;S.issueSince=now;return;}
+  if(now-S.issueSince>800&&now-S.poseStart>3500)speak(is.ta,is.key);
+}
+function setChips(c){
+  for(const k of ["face","light","dist","angle","expr"]){const el=$("c_"+k);el.className="chip"+(c[k]?" "+c[k]:"");}
+  $("c_light").textContent=S.expo&&c.light&&c.light!=="ok"?"Light (fixing)":"Light";
+}
+function showMsg(t){const m=$("msg");if(m.textContent!==t)m.textContent=t;}
+
+function drawOverlay(lm,good){
+  const cw=overlay.clientWidth,ch=overlay.clientHeight,dpr=devicePixelRatio||1;
+  if(overlay.width!==cw*dpr){overlay.width=cw*dpr;overlay.height=ch*dpr;}
+  octx.setTransform(dpr,0,0,dpr,0,0);octx.clearRect(0,0,cw,ch);
+  if(!lm||good===null)return;
+  const vw=video.videoWidth,vh=video.videoHeight,sc=Math.min(cw/vw,ch/vh),ox=(cw-vw*sc)/2,oy=(ch-vh*sc)/2;
+  let x0=1,x1=0,y0=1,y1=0;for(const p of lm){x0=Math.min(x0,p.x);x1=Math.max(x1,p.x);y0=Math.min(y0,p.y);y1=Math.max(y1,p.y);}
+  const X=x=>ox+x*vw*sc,Y=y=>oy+y*vh*sc,pad=10;
+  const L=X(x0)-pad,R=X(x1)+pad,T=Y(y0)-pad,Bt=Y(y1)+pad,k=Math.min(28,(R-L)/4);
+  octx.strokeStyle=good?"#4fd18b":"#ffb547";octx.lineWidth=4;octx.lineCap="round";
+  octx.beginPath();
+  octx.moveTo(L,T+k);octx.lineTo(L,T);octx.lineTo(L+k,T);
+  octx.moveTo(R-k,T);octx.lineTo(R,T);octx.lineTo(R,T+k);
+  octx.moveTo(R,Bt-k);octx.lineTo(R,Bt);octx.lineTo(R-k,Bt);
+  octx.moveTo(L+k,Bt);octx.lineTo(L,Bt);octx.lineTo(L,Bt-k);
+  octx.stroke();
+}
+
+/* ---------------- Pose card drawing ---------------- */
+function drawPose(p){
+  const c=$("poseCanvas"),x=c.getContext("2d"),W=c.width,H=c.height;
+  x.clearRect(0,0,W,H);
+  x.fillStyle="rgba(255,255,255,.05)";x.fillRect(0,0,W,H);
+  if(p.brk){x.fillStyle="#ffb547";x.font="600 26px Sora, sans-serif";x.textAlign="center";x.fillText("Break",W/2,H/2);return;}
+  const scale={close:1.55,hs:1,half:.62}[p.dist];
+  const cx=W/2,cy={close:H*.5,hs:H*.4,half:H*.3}[p.dist];
+  const r=48*scale;
+  const yawOff={front:0,l34:-.38,r34:.38,lside:-.75,rside:.75}[p.yaw]; // drawn as a mirror view
+  const pitchOff={level:0,up:-.22,down:.22}[p.pitch];
+  const rot={straight:0,any:0,tiltL:-.28,tiltR:.28}[p.roll];
+  // body
+  x.fillStyle="#3a3129";
+  x.beginPath();x.ellipse(cx,cy+r*1.05+r*1.4,r*2.1,r*1.5,0,Math.PI,0);x.fill();
+  if(p.dist==="half"){x.fillRect(cx-r*2.1,cy+r*2.4,r*4.2,H);}
+  x.fillRect(cx-r*.35,cy+r*.8,r*.7,r*.5);
+  // head
+  x.save();x.translate(cx,cy);x.rotate(rot);
+  x.fillStyle="#e2b48a";x.beginPath();x.ellipse(0,0,r*.82,r,0,0,Math.PI*2);x.fill();
+  x.fillStyle="#2b2018";x.beginPath();x.ellipse(0,-r*.55,r*.84,r*.5,0,Math.PI,0);x.fill();
+  const fx=yawOff*r*.6,fy=pitchOff*r;
+  x.fillStyle="#2b2018";
+  const eyeGap=r*.32*(1-Math.abs(yawOff)*.45);
+  x.beginPath();x.arc(fx-eyeGap,fy-r*.12,r*.08,0,7);x.arc(fx+eyeGap,fy-r*.12,r*.08,0,7);x.fill();
+  // nose
+  x.strokeStyle="#b98560";x.lineWidth=r*.07;x.lineCap="round";
+  x.beginPath();x.moveTo(fx+yawOff*r*.1,fy-r*.02);x.lineTo(fx+yawOff*r*.32,fy+r*.2);x.stroke();
+  // mouth
+  x.strokeStyle="#7a2e22";x.fillStyle="#7a2e22";x.lineWidth=r*.07;
+  const my=fy+r*.48,mw=r*.28;
+  x.beginPath();
+  if(p.expr==="smile"||p.expr==="any"&&false){x.arc(fx,my-r*.12,mw,.2*Math.PI,.8*Math.PI);x.stroke();}
+  else if(p.expr==="laugh"){x.arc(fx,my-r*.06,mw,0,Math.PI);x.closePath();x.fill();}
+  else if(p.expr==="surprised"){x.ellipse(fx,my,mw*.45,mw*.6,0,0,7);x.fill();}
+  else{x.moveTo(fx-mw*.7,my);x.lineTo(fx+mw*.7,my);x.stroke();}
+  x.restore();
+  // arrow for turns
+  if(p.yaw!=="front"){
+    const dir=Math.sign(yawOff);x.strokeStyle="#ffb547";x.fillStyle="#ffb547";x.lineWidth=5;
+    const ay=Math.max(18,cy-r*1.25),ax=cx+dir*r*.2;
+    x.beginPath();x.moveTo(ax,ay);x.lineTo(ax+dir*r*.8,ay);x.stroke();
+    x.beginPath();x.moveTo(ax+dir*r*.95,ay);x.lineTo(ax+dir*r*.7,ay-9);x.lineTo(ax+dir*r*.7,ay+9);x.closePath();x.fill();
+  }
+  if(p.pitch!=="level"){
+    x.strokeStyle="#ffb547";x.fillStyle="#ffb547";x.lineWidth=5;
+    const d=p.pitch==="up"?-1:1,ax=Math.min(W-16,cx+r*1.15);
+    x.beginPath();x.moveTo(ax,cy);x.lineTo(ax,cy+d*r*.7);x.stroke();
+    x.beginPath();x.moveTo(ax,cy+d*r*.85);x.lineTo(ax-9,cy+d*r*.6);x.lineTo(ax+9,cy+d*r*.6);x.closePath();x.fill();
+  }
+}
+
+/* ---------------- Flow ---------------- */
+function goTo(i){
+  clearTimeout(S.autoTimer);
+  if(i>=items().length){finish();return;}
+  S.idx=i;const p=cur();S.poseStart=performance.now();S.lastIssueKey=null;S.lastLightSpeak=0;resetReady();keyTimes={};
+  $("review").hidden=true;
+  const n=poseNumber(),t=poseCount();
+  $("counter").innerHTML=`Pose ${n} <small>/ ${t}</small>`;
+  drawPose(p);
+  if(p.brk){
+    S.phase="break";$("card").querySelector(".lbl").textContent="Break";
+    $("poseName").textContent=p.title;$("poseHint").textContent=p.text;
+    $("breakTitle").textContent=p.title;$("breakText").textContent=p.text;$("breakCard").hidden=false;
+    showMsg(p.text);setChips({});
+    speak(p.ta,"break",true);return;
+  }
+  $("breakCard").hidden=true;S.phase="guide";
+  $("card").querySelector(".lbl").textContent="Your pose";
+  $("poseName").textContent=p.name;$("poseHint").textContent=p.hint;
+  showMsg(p.hint);
+  speak(`Pose ${n}. ${p.ta}`,"intro",true);
+}
+function startCountdown(){
+  if(S.phase!=="guide")return;
+  S.phase="countdown";clearTimeout(S.autoTimer);speechSynthesis.cancel();
+  const el=$("count");el.hidden=false;let n=3;
+  const tick=()=>{
+    if(S.phase!=="countdown"){el.hidden=true;return;}
+    if(n===0){el.hidden=true;capture();return;}
+    el.textContent=n;beep(n===1?1100:800);n--;setTimeout(tick,750);
+  };tick();
+}
+async function capture(){
+  const vw=video.videoWidth,vh=video.videoHeight,c=document.createElement("canvas");c.width=vw;c.height=vh;
+  const x=c.getContext("2d");
+  if(S.bright&&S.light.face<105){const gain=Math.min(1.35,118/Math.max(40,S.light.face));x.filter=`brightness(${gain.toFixed(2)}) contrast(1.03)`;}
+  x.drawImage(video,0,0,vw,vh);
+  shutterSound();const f=$("flash");f.classList.add("on");setTimeout(()=>f.classList.remove("on"),60);
+  const blob=await new Promise(r=>c.toBlob(r,"image/jpeg",.95));
+  const p=cur(),n=poseNumber();
+  const name=`VAYOGI_${S.setKey==="lora"?"Face":"Thumb"}_${String(n).padStart(2,"0")}_${p.id}.jpg`;
+  if(S.pending)URL.revokeObjectURL(S.pending.url);
+  S.pending={blob,name,url:URL.createObjectURL(blob)};
+  $("reviewImg").src=S.pending.url;$("review").hidden=false;S.phase="review";
+  speak("Photo எடுத்தாச்சு. நல்லா இருந்தா OK சொல்லுங்க. மறுபடி எடுக்கணும்னா Again சொல்லுங்க.","review",true);
+}
+function savePhoto(){
+  if(S.phase!=="review"||!S.pending)return;
+  const p=S.pending;S.pending=null;
+  const i=S.captures.findIndex(c=>c.name===p.name);if(i>=0)S.captures.splice(i,1,p);else S.captures.push(p);
+  if(S.saveEach)downloadBlob(p.blob,p.name);
+  refreshGallery();
+  speak("Save ஆச்சு.","saved",true);
+  setTimeout(()=>goTo(S.idx+1),900);
+}
+function retake(){
+  if(S.pending){URL.revokeObjectURL(S.pending.url);S.pending=null;}
+  $("review").hidden=true;S.phase="guide";S.poseStart=performance.now()-2000;resetReady();
+  speak("சரி, மறுபடி எடுக்கலாம்.","retake",true);
+}
+function pause(){S.phase="paused";clearTimeout(S.autoTimer);showMsg("Paused. Say \"Start\" or tap Back to camera.");speak("நிறுத்தி வச்சிருக்கேன். மறுபடி ஆரம்பிக்க Start சொல்லுங்க.","pause",true);setChips({});}
+function resume(){$("menu").hidden=true;const p=cur();if(p&&p.brk){S.phase="break";return;}S.phase="guide";S.poseStart=performance.now()-2000;resetReady();showMsg(p?p.hint:"");}
+function finish(){
+  S.phase="done";$("review").hidden=true;$("breakCard").hidden=true;
+  $("doneText").textContent=`You took ${S.captures.length} photos.`+(S.saveEach?" Each one is already in the phone's Download folder.":" Tap the button below to save them.");
+  refreshGallery();$("done").hidden=false;
+  speak("எல்லா photo-வும் முடிஞ்சது. நல்லா பண்ணீங்க!","done",true);
+}
+
+/* ---------------- Files ---------------- */
+function downloadBlob(blob,name){
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},4000);
+}
+async function downloadZip(){
+  if(!S.captures.length){alert("No photos yet.");return;}
+  const z=new JSZip();S.captures.forEach(c=>z.file(c.name,c.blob));
+  const blob=await z.generateAsync({type:"blob"});
+  downloadBlob(blob,`VAYOGI_${S.setKey==="lora"?"Face":"Thumb"}_photos.zip`);
+}
+function refreshGallery(){
+  for(const id of ["gallery","gallery2"]){const g=$(id);g.innerHTML="";S.captures.forEach(c=>{const im=new Image();im.src=c.url;im.alt=c.name;g.appendChild(im);});}
+  $("galTitle").textContent=`Photos taken: ${S.captures.length}`;
+}
+
+/* ---------------- Buttons ---------------- */
+$("startBtn").onclick=async()=>{
+  S.setKey=document.querySelector('input[name=set]:checked').value;
+  S.facing=document.querySelector('input[name=cam]:checked').value;
+  S.voice=$("optVoice").checked;S.mic=$("optMic").checked;S.auto=$("optAuto").checked;S.bright=$("optBright").checked;S.saveEach=$("optSave").checked;
+  $("setname").textContent=SETS[S.setKey].name;
+  audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();
+  const btn=$("startBtn");btn.disabled=true;btn.textContent="Opening camera…";
+  try{await startCamera();}
+  catch(e){btn.disabled=false;btn.textContent="Start photo shoot";const n=$("startNote");n.hidden=false;
+    n.textContent="Camera did not open. Allow camera access for this page in Chrome, and open this page from its https:// link (not from a file).";return;}
+  btn.textContent="Loading face detector…";
+  try{if(!landmarker)await loadModel();}
+  catch(e){btn.disabled=false;btn.textContent="Start photo shoot";const n=$("startNote");n.hidden=false;n.textContent="Face detector did not load. Check the internet connection and try again.";return;}
+  try{await navigator.wakeLock?.request("screen");}catch(_){}
+  $("start").hidden=true;btn.disabled=false;btn.textContent="Start photo shoot";
+  if(!rec)setupRec();updateMicBtn();
+  S.captures=[];S.pitchBase=null;refreshGallery();
+  speak("வணக்கம்! Photo shoot ஆரம்பிக்கலாம்.","hello",true);
+  setTimeout(()=>goTo(0),1600);
+  requestAnimationFrame(loop);
+};
+$("shootBtn").onclick=()=>{if(S.phase==="guide")startCountdown();else if(S.phase==="break")goTo(S.idx+1);};
+$("nextBtn").onclick=()=>command(S.phase==="review"?"ok":"next");
+$("backBtn").onclick=()=>command("back");
+$("saveBtn").onclick=savePhoto;$("retakeBtn").onclick=retake;
+$("breakBtn").onclick=()=>goTo(S.idx+1);
+$("micBtn").onclick=()=>{S.mic=!S.mic;if(!rec)setupRec();updateMicBtn();if(S.mic)recResume();else recPause();};
+$("lightBtn").onclick=()=>{S.ring=!S.ring;$("ring").hidden=!S.ring;$("lightBtn").classList.toggle("on",S.ring);
+  if(S.ring)speak("Screen light ON. Phone brightness-ஐ முழுசா வைங்க.","ring",true);};
+$("menuBtn").onclick=()=>{$("mAuto").checked=S.auto;$("mVoice").checked=S.voice;$("menu").hidden=false;if(S.phase==="guide")S.phase="paused";};
+$("resumeBtn").onclick=resume;
+$("mAuto").onchange=e=>S.auto=e.target.checked;
+$("mVoice").onchange=e=>{S.voice=e.target.checked;if(!S.voice)speechSynthesis.cancel();};
+$("switchCamBtn").onclick=async()=>{S.facing=S.facing==="user"?"environment":"user";try{await startCamera();}catch(_){}resume();};
+$("zipBtn").onclick=downloadZip;$("zipBtn2").onclick=downloadZip;
+const restart=()=>{$("done").hidden=true;$("menu").hidden=true;S.phase="idle";speechSynthesis.cancel();$("start").hidden=false;};
+$("restartBtn").onclick=restart;$("restartBtn2").onclick=restart;
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&S.phase!=="idle")navigator.wakeLock?.request("screen").catch(()=>{});});
+drawPose(SETS.lora.items[0]);
+</script>
+</body>
+</html>
